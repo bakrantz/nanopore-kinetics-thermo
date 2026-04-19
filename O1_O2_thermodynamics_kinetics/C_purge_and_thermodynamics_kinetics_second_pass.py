@@ -11,7 +11,7 @@ k_B = 1.380649e-23 # Boltzmann constant J/K
 h = 6.62607015e-34 # Planck constant J*s
 PREFACTOR = (k_B * T) / h # approx 6.2e12 s^-1
 
-def purge_c_states(states, c_label=0, o1_label=1, o2_label=2):
+def purge_c_states(states, c_label, o1_label, o2_label):
     """
     Purges C states by merging them into adjacent states.
     Handles the four edge cases: O1-C-O1, O2-C-O2, O1-C-O2, O2-C-O1.
@@ -99,7 +99,8 @@ def fit_exponential_cdf(dwells):
         print(f"Fit failed: {e}")
         return np.nan, np.nan, np.nan, np.nan
 
-def process_beautification_and_kinetics(metadata_row, input_dir, output_dir):
+# --- FIXED FUNCTION ---
+def process_beautification_and_kinetics(metadata_row, input_dir, output_dir, c_label=2, o1_label=1, o2_label=0):
     """Executes Steps 1-4 for a single file and returns data for Step 5."""
     filename = metadata_row['filename']
     basename = os.path.splitext(filename)[0]
@@ -114,17 +115,17 @@ def process_beautification_and_kinetics(metadata_row, input_dir, output_dir):
     df = pd.read_csv(input_csv)
     times = df['Time'].to_numpy()
     current = df['Filtered_Current'].to_numpy()
-    raw_states = df['State'].to_numpy() # 0=C, 1=O1, 2=O2
+    raw_states = df['State'].to_numpy() 
     
     # Step 2: Beautify / Purge C-states
-    purged_states = purge_c_states(raw_states, c_label=0, o1_label=1, o2_label=2)
+    purged_states = purge_c_states(raw_states, c_label=c_label, o1_label=o1_label, o2_label=o2_label)
     
     # Save Purged CSV
     purged_filename = f"{basename}_C_purged.csv"
     purged_filepath = os.path.join(output_dir, purged_filename)
     pd.DataFrame({'Time': times, 'Current': current, 'State': purged_states}).to_csv(purged_filepath, index=False)
     
-    # Plotting Step 2
+    # Plotting Step 2 (Fixed y-axis mapping)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
     ax1.plot(times, current, 'b-', alpha=0.7)
     ax1.set_ylabel('Current (pA)')
@@ -132,8 +133,8 @@ def process_beautification_and_kinetics(metadata_row, input_dir, output_dir):
     ax1.grid(True, linestyle='--', alpha=0.5)
     
     ax2.plot(times, purged_states, 'g-', alpha=0.8)
-    ax2.set_yticks([1, 2])
-    ax2.set_yticklabels(['O1', 'O2'])
+    ax2.set_yticks([o2_label, o1_label]) 
+    ax2.set_yticklabels(['O2', 'O1'])
     ax2.set_ylabel('State')
     ax2.set_xlabel('Time (s)')
     ax2.grid(True, linestyle='--', alpha=0.5)
@@ -141,16 +142,16 @@ def process_beautification_and_kinetics(metadata_row, input_dir, output_dir):
     plt.savefig(os.path.join(output_dir, f"{basename}_purged_trace.png"))
     plt.close()
     
-    # Step 3: Thermodynamics (Equilibrium)
-    count_o1 = np.sum(purged_states == 1)
-    count_o2 = np.sum(purged_states == 2)
+    # Step 3: Thermodynamics (Equilibrium) - FIXED
+    count_o1 = np.sum(purged_states == o1_label)
+    count_o2 = np.sum(purged_states == o2_label)
     
     K_eq = count_o2 / count_o1 if count_o1 > 0 else np.nan
     DG_eq = -R * T * np.log(K_eq) if K_eq > 0 else np.nan
     
-    # Step 4: Kinetics & Dwell Times
-    dwells_o1 = extract_dwell_times(times, purged_states, 1) # Time in O1 before O2
-    dwells_o2 = extract_dwell_times(times, purged_states, 2) # Time in O2 before O1
+    # Step 4: Kinetics & Dwell Times - FIXED
+    dwells_o1 = extract_dwell_times(times, purged_states, o1_label) # Time in O1 before O2
+    dwells_o2 = extract_dwell_times(times, purged_states, o2_label) # Time in O2 before O1
     
     k_12, dg_dag_12, t_12, cdf_12 = fit_exponential_cdf(dwells_o1)
     k_21, dg_dag_21, t_21, cdf_21 = fit_exponential_cdf(dwells_o2)
@@ -205,29 +206,21 @@ def process_beautification_and_kinetics(metadata_row, input_dir, output_dir):
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    input_dir = "./PA/guesthost_Tyr_processed/" 
-    output_dir = "./PA/guesthost_Tyr_kinetics/"
+    # Paths for Mac environment (Update to Jaylen's paths if needed)
+    base_dir = "./"
+    input_dir = os.path.join(base_dir, "Super_O2_processed")
+    output_dir = os.path.join(base_dir, "Super_O2_kinetics")
+    
     os.makedirs(output_dir, exist_ok=True)
     
-    # 1. Load your Metadata CSV
-    metadata_csv_path = "experiment_metadata.csv"
-    
-    # --- Example creation of metadata.csv (Run once to generate template) ---
-    if not os.path.exists(metadata_csv_path):
-        example_meta = pd.DataFrame([
-            {'filename': '11n09001-guesthost_Tyr-70_mV-600_Hz-rpt_1.atf', 'nanopore': 'WT', 'ligand': 'DOC', 'ligand_conc_mM': 0.5, 'pH': 7.5, 'buffer': '1M KCl', 'voltage_mV': 70, 'salt_gradient': 'None'},
-            {'filename': '11n09002-guesthost_Tyr-70_mV-600_Hz-rpt_1.atf', 'nanopore': 'WT', 'ligand': 'None', 'ligand_conc_mM': 0.0, 'pH': 7.5, 'buffer': '1M KCl', 'voltage_mV': 70, 'salt_gradient': 'None'}
-        ])
-        example_meta.to_csv(metadata_csv_path, index=False)
-        print(f"Created template metadata file at {metadata_csv_path}")
-    # ------------------------------------------------------------------------
-
+    metadata_csv_path = os.path.join(base_dir, "experiment_metadata.csv")
     df_meta = pd.read_csv(metadata_csv_path)
     summary_results = []
     
     for index, row in df_meta.iterrows():
         print(f"Analyzing kinetics for: {row['filename']}")
-        result = process_beautification_and_kinetics(row, input_dir, output_dir)
+        # Pass the labels explicitly to the function here
+        result = process_beautification_and_kinetics(row, input_dir, output_dir, c_label=2, o1_label=1, o2_label=0)
         if result:
             summary_results.append(result)
             

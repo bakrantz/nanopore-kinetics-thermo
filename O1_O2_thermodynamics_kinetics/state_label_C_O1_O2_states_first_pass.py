@@ -7,7 +7,7 @@ from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 
 # --- 1. ATF File Loading ---
-def load_atf(filepath: str, header_row_index: int = 9) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+def load_atf(filepath, header_row_index=9):
     """Loads data from an .atf file, preserving the multi-line header."""
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found at '{filepath}'")
@@ -40,7 +40,7 @@ def load_atf(filepath: str, header_row_index: int = 9) -> tuple[np.ndarray, np.n
 
 
 # --- 2. Baseline Drift Correction ---
-def dynamic_baseline_correction(current_trace_data: np.ndarray, window_size: int = 50, threshold_std_dev: float = 3.0, n_clusters_for_baseline_detection: int = 1) -> tuple[np.ndarray, np.ndarray]:
+def dynamic_baseline_correction(current_trace_data, window_size=50, threshold_std_dev=3.0, n_clusters_for_baseline_detection=1):
     """Corrects baseline drift by zeroing the dominant open state."""
     if current_trace_data.size == 0:
         return np.array([]), np.array([])
@@ -79,7 +79,7 @@ def dynamic_baseline_correction(current_trace_data: np.ndarray, window_size: int
 
 
 # --- 3. State Identification ---
-def identify_conductance_states(current_trace_data: np.ndarray, n_states: int, initial_centroids: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def identify_conductance_states(current_trace_data, n_states, initial_centroids=None):
     """Classifies points based on initial centroid proximity."""
     X = current_trace_data.reshape(-1, 1)
     distances = np.abs(X - initial_centroids)
@@ -100,7 +100,7 @@ def identify_conductance_states(current_trace_data: np.ndarray, n_states: int, i
 
 
 # --- 4. CSV Export ---
-def export_labeled_csv(filepath: str, times: np.ndarray, filtered_current: np.ndarray, labels: np.ndarray, output_dir: str):
+def export_labeled_csv(filepath, times, filtered_current, labels, output_dir):
     """Exports Time, Filtered Current, and States to CSV with Windows/Excel compatibility."""
     file_basename = os.path.splitext(os.path.basename(filepath))[0]
     csv_filepath = os.path.join(output_dir, f"{file_basename}_labeled.csv")
@@ -192,9 +192,6 @@ def batch_processor(filepaths, initial_centroids_map, output_dir, window_size=40
             n_states = len(initial_centroids)
             centroids, labels = identify_conductance_states(filtered_current, n_states, initial_centroids)
 
-            # Optional: Reverse labels if you want 0=Closed, N=Open
-            # reversed_labels = (n_states - 1) - labels
-
             # 4. Export
             csv_filepath = export_labeled_csv(filepath, times, filtered_current, labels, output_dir)
             
@@ -218,19 +215,17 @@ def batch_processor(filepaths, initial_centroids_map, output_dir, window_size=40
 
 # --- 7. Main Execution ---
 if __name__ == "__main__":
-    output_dir = "./PA/guesthost_Tyr_processed/"
-    base_data_dir = "/Users/bakrantz/Documents/python/database/raw_data/PA/guesthost_Tyr/" 
+    output_dir = "./Super_O2_processed/"
+    base_data_dir =  "./data/"
     
     # Truncated list for example (add your full list back here)
-    atf_filepaths_text = """
-11n09001-guesthost_Tyr-70_mV-600_Hz-rpt_1.atf
-11n09001-guesthost_Tyr-70_mV-600_Hz-rpt_2.atf
+    atf_filepaths_text = """26414001-DOCh-0mV-600_Hz-rpt_1.atf
     """
     atf_filepaths = [os.path.join(base_data_dir, line.strip()) for line in atf_filepaths_text.splitlines() if line.strip()]
 
     # Define centroids assuming Open State is zeroed by the drift correction
     # Adjust these based on your specific DOC O1/O2/C separation
-    centroids_3state = np.array([-4.7, -0.8, 0.0]) # Example: C, O1, O2
+    centroids_3state = np.array([0, 0.42, 2.1]) 
     
     initial_centroids_map = {os.path.basename(f): centroids_3state for f in atf_filepaths}
 
@@ -239,7 +234,7 @@ if __name__ == "__main__":
         initial_centroids_map=initial_centroids_map,
         output_dir=output_dir,
         fs=600,                 # Current acquisition rate
-        filter_cutoff_hz=30,    # Target low-pass cutoff (10-50Hz)
+        filter_cutoff_hz=1,    # Target low-pass cutoff (10-50Hz)
         window_size=4000,
         n_clusters_baseline=3,
         visualize=True
